@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  RESIDENT
+  SECURITY
+  VISITOR
+}
+
+enum ScanStatus {
+  VALID
+  EXPIRED
+  DENIED
+}
+
+enum VisitorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+model User {
+  id            Int       @id @default(autoincrement())
+  name          String
+  email         String    @unique
+  password      String?
+  phone         String
+  house_no      String?
+  role          UserRole  @default(RESIDENT)
+  profileImage  String?   // Stores Google profile picture
+  googleID      String?   @unique  // Stores Google OAuth ID, should be unique
+  referralSource String?  // Source of referral, useful for tracking
+  isVerified    Boolean   @default(false) // Indicates if email is verified
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  qr_codes      Qr_code[]
+  scannedLogs   QrScanLog[] @relation("UserScanned")
+  scannedByLogs QrScanLog[] @relation("ScannedBy")
+  visitors      Visitor[]   @relation("Visitors")
+}
+
+
+model Visitor {
+  id          Int           @id @default(autoincrement())
+  name        String
+  email       String        @unique
+  phone       String
+  purpose     String
+  status      VisitorStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  validFrom   DateTime
+  validUntil  DateTime
+  
+  // Relations
+  resident_id Int
+  resident    User    @relation("Visitors", fields: [resident_id], references: [id], onDelete: Cascade)
+  
+  qr_code     Qr_code @relation(fields: [qr_code_id], references: [id], onDelete: Cascade)
+  qr_code_id  Int     @unique // One QR code per visitor
+  
+  @@index([resident_id])
+}
+
+model Qr_code {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expiresAt DateTime
+  isActive  Boolean   @default(true)
+  
+  // Relations
+  user_id   Int  
+  user      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  visitor   Visitor?
+  scanLogs  QrScanLog[]
+
+  @@index([user_id])
+  @@index([code])
+}
+
+model QrScanLog {
+  id            Int        @id @default(autoincrement())
+  scan_time     DateTime   @default(now())
+  status        ScanStatus
+  entry_granted Boolean    @default(false)
+  location      String?    // Optional: track where the scan occurred
+  
+  // Relations
+  userId        Int
+  user          User       @relation("UserScanned", fields: [userId], references: [id], onDelete: Cascade)
+  
+  scannedById   Int?
+  scannedBy     User?      @relation("ScannedBy", fields: [scannedById], references: [id], onDelete: SetNull)
+  
+  qr_code_id    Int
+  qr_code       Qr_code    @relation(fields: [qr_code_id], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([scannedById])
+  @@index([qr_code_id])
+}
